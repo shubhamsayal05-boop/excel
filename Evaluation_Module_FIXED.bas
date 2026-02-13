@@ -55,6 +55,16 @@ Public Sub EvaluateAVLStatus()
     Set wsSheet1 = ThisWorkbook.Sheets("Sheet1")
     Set wsHeatmap = ThisWorkbook.Sheets("HeatMap Sheet")
     
+    ' NEW: Get column indices for responsiveness section (separate from drivability)
+    Dim targetRespCol As Integer, testedRespCol As Integer
+    targetRespCol = FindCarColumnInSection(wsSheet1, targetCarName, 12)  ' Responsiveness starts around column 12
+    testedRespCol = FindCarColumnInSection(wsSheet1, testedCarName, 12)
+    
+    If targetRespCol = 0 Or testedRespCol = 0 Then
+        MsgBox "Error: Could not find responsiveness columns for selected cars.", vbCritical, "Error"
+        Exit Sub
+    End If
+    
     ' Delete existing results sheet if present
     On Error Resume Next
     Application.DisplayAlerts = False
@@ -93,9 +103,9 @@ Public Sub EvaluateAVLStatus()
             drivTarget = ToDbl(wsSheet1.Cells(i, targetCol).Value)
             drivTested = ToDbl(wsSheet1.Cells(i, testedCol).Value)
             
-            ' Resp columns are 7 positions after Driv
-            respTarget = ToDbl(wsSheet1.Cells(i, targetCol + 7).Value)
-            respTested = ToDbl(wsSheet1.Cells(i, testedCol + 7).Value)
+            ' Resp columns are in separate section - use specific responsiveness columns
+            respTarget = ToDbl(wsSheet1.Cells(i, targetRespCol).Value)
+            respTested = ToDbl(wsSheet1.Cells(i, testedRespCol).Value)
             
             drivBenchDiff = benchDiff(drivTarget, drivTested)
             respBenchDiff = benchDiff(respTarget, respTested)
@@ -567,5 +577,32 @@ Private Sub ColorCell(c As Range, s As String)
             c.Font.Color = vbBlack
     End Select
 End Sub
+
+' ============================================================================
+' Find car column in a specific section (Drivability or Responsiveness)
+' Searches from startCol onwards in row 2 for the car name
+' ============================================================================
+Private Function FindCarColumnInSection(ws As Worksheet, carName As String, startCol As Integer) As Integer
+    Dim col As Integer
+    Dim cellValue As String
+    Dim lastCol As Integer
+    
+    FindCarColumnInSection = 0
+    
+    ' Find last column with data in row 2
+    lastCol = ws.Cells(2, ws.Columns.count).End(xlToLeft).Column
+    
+    ' Search from startCol to lastCol
+    For col = startCol To lastCol
+        cellValue = Trim(CStr(ws.Cells(2, col).Value))
+        
+        ' Match the car name
+        If cellValue = Trim(carName) Then
+            FindCarColumnInSection = col
+            Exit Function
+        End If
+    Next col
+    
+End Function
 
 -------------------------------------------------------------------------------
