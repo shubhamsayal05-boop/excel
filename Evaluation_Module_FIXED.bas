@@ -85,7 +85,7 @@ Public Sub EvaluateAVLStatus()
         opCode = wsSheet1.Cells(i, 1).Value
         
         If Trim(CStr(opCode)) <> "" Then
-            testedAVL = GetTestedAVL(wsHeatmap, opCode)
+            testedAVL = GetTestedAVL(wsHeatmap, opCode, testedCarName)
             drivP1 = GetP1StatusFromColor(wsSheet1.Cells(i, 5))
             respP1 = GetP1StatusFromColor(wsSheet1.Cells(i, 12))
             
@@ -295,16 +295,34 @@ Private Function benchDiff(targetVal As Double, testedVal As Double) As Double
 End Function
 
 ' ============================================================================
-' Look up Tested AVL from HeatMap sheet (column 1 = op code; column 8 = AVL)
+' Look up Tested AVL from HeatMap sheet - reads from tested vehicle's column
 ' ============================================================================
-Private Function GetTestedAVL(wsHeatmap As Worksheet, opCode As Variant) As Double
+Private Function GetTestedAVL(wsHeatmap As Worksheet, opCode As Variant, testedCarName As String) As Double
     Dim opKey As String
     Dim f As Range
     Dim avlCol As Long
     Dim lastRow As Long
+    Dim lastCol As Long
     Dim c As Range
+    Dim col As Long
     
-    avlCol = 8
+    ' Find the column for the tested vehicle in HeatMap sheet
+    ' Vehicle names are in row 2
+    avlCol = 0
+    lastCol = wsHeatmap.Cells(2, wsHeatmap.Columns.count).End(xlToLeft).Column
+    
+    For col = 1 To lastCol
+        If Trim(CStr(wsHeatmap.Cells(2, col).Value)) = Trim(testedCarName) Then
+            avlCol = col
+            Exit For
+        End If
+    Next col
+    
+    ' If vehicle column not found, default to column 8 for backward compatibility
+    If avlCol = 0 Then
+        avlCol = 8
+    End If
+    
     opKey = Trim(CStr(opCode))
     
     ' Try exact find (string)
