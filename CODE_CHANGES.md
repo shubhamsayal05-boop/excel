@@ -1,11 +1,12 @@
 # Code Changes - Detailed Comparison
 
 ## Summary
-Four changes were made to fix the data transfer issue:
+Five changes were made to fix the data transfer issue:
 1. Fixed `CollectHeaders` function - removed DR filter
 2. Fixed `CollectHeaderCols` function - removed DR filter  
 3. Added capacity warning in `RefreshHeatmap` - user notification
 4. Fixed `BuildModeIndex` function - made case-insensitive for operation mode matching
+5. Fixed `CollectRowLabels` function - applied Trim$ consistently to handle trailing spaces
 
 ---
 
@@ -221,6 +222,50 @@ End Function
 
 ---
 
+## Change 5: CollectRowLabels Function (Trailing Spaces Fix)
+
+**Location**: Line 306 in HeatMap.bas
+
+### BEFORE (Inconsistent Trimming)
+```vba
+Public Function CollectRowLabels(ws As Worksheet, anc As Range) As Collection
+    Dim out As New Collection, r As Long, emptyRun As Long, lastR As Long
+    
+    On Error Resume Next
+    lastR = ws.Cells(ws.Rows.count, anc.Column).End(xlUp).row
+    On Error GoTo 0
+    
+    For r = anc.row + 2 To lastR
+        If Trim$(ws.Cells(r, anc.Column).Value) <> "" Then
+            out.Add ws.Cells(r, anc.Column).Value  ← PROBLEM: Not trimmed
+            emptyRun = 0
+```
+
+### AFTER (Consistent Trimming)
+```vba
+Public Function CollectRowLabels(ws As Worksheet, anc As Range) As Collection
+    Dim out As New Collection, r As Long, emptyRun As Long, lastR As Long
+    
+    On Error Resume Next
+    lastR = ws.Cells(ws.Rows.count, anc.Column).End(xlUp).row
+    On Error GoTo 0
+    
+    For r = anc.row + 2 To lastR
+        If Trim$(ws.Cells(r, anc.Column).Value) <> "" Then
+            out.Add Trim$(ws.Cells(r, anc.Column).Value)  ← FIXED: Trimmed consistently
+            emptyRun = 0
+```
+
+**What Changed**: 
+- ✅ Added: `Trim$()` when adding mode name to collection
+
+**Impact**: 
+- Operation mode names with trailing/leading spaces now handled correctly
+- Consistent trimming with `BuildModeIndex` function
+- Fixes issue where modes existed in both sheets but didn't match due to hidden spaces
+
+---
+
 ## Why These Changes Fix the Issue
 
 ### The Original Bug Flow:
@@ -229,7 +274,8 @@ End Function
 3. `n = Min(tVehCols.count, sVehHdr.count)` → n becomes 0 or very small
 4. Data copy loop: `For j = 1 To n` → copies 0 or few vehicles
 5. Mode matching is case-sensitive → "transition to constant speed" ≠ "Transition to Constant Speed"
-6. Result: **Missing data**
+6. Mode names not trimmed → "Transition to constant speed   " ≠ "Transition to constant speed"
+7. Result: **Missing data**
 
 ### The Fixed Flow:
 1. `CollectHeaders` includes DR columns → returns complete list ✅
@@ -238,7 +284,8 @@ End Function
 4. Data copy loop: `For j = 1 To n` → copies all available vehicles ✅
 5. Warning shown if truncation occurs ✅
 6. Mode matching is case-insensitive → matches regardless of capitalization ✅
-7. Result: **All data transferred** ✅
+7. Mode names trimmed consistently → matches regardless of spaces ✅
+8. Result: **All data transferred** ✅
 
 ---
 
@@ -247,9 +294,10 @@ End Function
 - Line 285-287: Removed DR filter condition (CollectHeaderCols)
 - Line 80-84: Added capacity warning (RefreshHeatmap)
 - Line 320-321: Added case-insensitive mode matching (BuildModeIndex)
+- Line 306: Added consistent trimming (CollectRowLabels)
 
-**Total lines changed**: 11 lines
-**Functions modified**: 3 functions
+**Total lines changed**: 12 lines
+**Functions modified**: 4 functions
 **New features added**: 1 warning message
 
 This is a **minimal, surgical fix** that addresses the root cause without changing unrelated code.
