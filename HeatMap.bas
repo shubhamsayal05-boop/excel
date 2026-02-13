@@ -303,7 +303,7 @@ Public Function CollectRowLabels(ws As Worksheet, anc As Range) As Collection
     
     For r = anc.row + 2 To lastR
         If Trim$(ws.Cells(r, anc.Column).Value) <> "" Then
-            out.Add ws.Cells(r, anc.Column).Value
+            out.Add Trim$(ws.Cells(r, anc.Column).Value)  ' Apply Trim$ for consistency
             emptyRun = 0
         Else
             emptyRun = emptyRun + 1
