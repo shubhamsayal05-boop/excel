@@ -31,6 +31,7 @@
 | **[FIX_SUMMARY.md](./FIX_SUMMARY.md)** | Quick reference and verification checklist |
 | **[FIX_DOCUMENTATION.md](./FIX_DOCUMENTATION.md)** | Complete fix documentation with import instructions |
 | **[CODE_CHANGES.md](./CODE_CHANGES.md)** | Detailed before/after code comparison |
+| **[CASE_SENSITIVITY_FIX.md](./CASE_SENSITIVITY_FIX.md)** | Case sensitivity issue and fix |
 | **[VISUAL_EXPLANATION.md](./VISUAL_EXPLANATION.md)** | Visual diagrams showing bug and fix |
 | **[TESTING_GUIDE.md](./TESTING_GUIDE.md)** | Step-by-step testing instructions |
 
@@ -38,17 +39,20 @@
 
 ## 🔍 What Was Fixed
 
-### Root Cause
-The `CollectHeaders` and `CollectHeaderCols` functions were incorrectly filtering out columns with "DR" in the header. Since DR columns contain vehicle data, they were being excluded, resulting in no or incomplete data transfer.
+### Root Causes
+1. **DR Column Filter**: The `CollectHeaders` and `CollectHeaderCols` functions were incorrectly filtering out columns with "DR" in the header. Since DR columns contain vehicle data, they were being excluded, resulting in no or incomplete data transfer.
+
+2. **Case-Sensitive Mode Matching**: The `BuildModeIndex` function used a case-sensitive dictionary, so operation modes with different capitalization (e.g., "transition to constant speed" vs "Transition to Constant Speed") wouldn't match.
 
 ### Solution
 - ✅ Removed incorrect DR filter from `CollectHeaders` function
 - ✅ Removed incorrect DR filter from `CollectHeaderCols` function  
+- ✅ Made operation mode matching case-insensitive in `BuildModeIndex`
 - ✅ Added warning when source data exceeds destination capacity
 
 ### Impact
-- **Before**: DR columns skipped → No or incomplete data transfer ❌
-- **After**: All columns collected → Complete data transfer ✅
+- **Before**: DR columns skipped + case-sensitive matching → No or incomplete data transfer ❌
+- **After**: All columns collected + case-insensitive matching → Complete data transfer ✅
 
 ---
 
@@ -59,6 +63,7 @@ The `CollectHeaders` and `CollectHeaderCols` functions were incorrectly filterin
 ├── HeatMap.bas                              # ⭐ Updated VBA module (IMPORT THIS)
 ├── AVLDrive_Heatmap_Tool version_4 (2).xlsm # Original Excel file (reference)
 ├── README.md                                # This file
+├── CASE_SENSITIVITY_FIX.md                  # Case sensitivity fix documentation
 ├── FIX_SUMMARY.md                           # Quick reference
 ├── FIX_DOCUMENTATION.md                     # Complete documentation
 ├── CODE_CHANGES.md                          # Before/after comparison
@@ -71,6 +76,7 @@ The `CollectHeaders` and `CollectHeaderCols` functions were incorrectly filterin
 ## 🎯 Expected Results After Fix
 
 ✅ All vehicle data from "Data Transfer Sheet" transfers to "HeatMap Sheet"  
+✅ Operation modes match regardless of capitalization (e.g., "transition to constant speed")  
 ✅ No silent data loss  
 ✅ Warning shown if destination capacity exceeded  
 ✅ All DR-prefixed columns properly handled  

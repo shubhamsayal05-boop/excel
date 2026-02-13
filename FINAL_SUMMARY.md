@@ -38,21 +38,25 @@
 
 ## 🔍 What Was Fixed
 
-### The Bug
-Two functions were incorrectly filtering out "DR" columns:
-- `CollectHeaders` (line 269-271)
-- `CollectHeaderCols` (line 285-287)
+### The Bugs
+1. **DR Column Filter**: Two functions were incorrectly filtering out "DR" columns:
+   - `CollectHeaders` (line 269-271)
+   - `CollectHeaderCols` (line 285-287)
+   - They were checking: `And UCase$(ws.Cells(anc.row, c).Value) <> "DR"`
+   - This excluded all DR columns (DR1, DR2, DR3, etc.) which contain the vehicle data!
 
-They were checking: `And UCase$(ws.Cells(anc.row, c).Value) <> "DR"`
-
-This excluded all DR columns (DR1, DR2, DR3, etc.) which contain the vehicle data!
+2. **Case-Sensitive Mode Matching**: The `BuildModeIndex` function used a case-sensitive dictionary
+   - "transition to constant speed" ≠ "Transition to Constant Speed"
+   - Operation modes with different capitalization wouldn't match and data wouldn't transfer
 
 ### The Fix
-**Removed** the incorrect DR filter from both functions.
+1. **Removed** the incorrect DR filter from both functions
+   - Now they check: `If Trim$(ws.Cells(anc.row, c).Value) <> ""`
+   - This includes ALL non-empty columns, including DR columns ✅
 
-Now they simply check: `If Trim$(ws.Cells(anc.row, c).Value) <> ""`
-
-This includes ALL non-empty columns, including DR columns. ✅
+2. **Made mode matching case-insensitive**
+   - Added: `d.CompareMode = vbTextCompare` to `BuildModeIndex`
+   - Operation modes now match regardless of capitalization ✅
 
 ### Bonus
 Added a warning message when source data exceeds destination capacity, so users know when data is being truncated.
@@ -67,6 +71,7 @@ Source: 4 vehicles (DR1, DR2, DR3, DR4) with data
 ↓
 CollectHeaders: Returns [] (empty, DR columns skipped)
 CollectHeaderCols: Returns [] (empty, DR columns skipped)
+Mode matching: Case-sensitive (mismatches fail)
 ↓
 n = Min(4, 0) = 0
 ↓
@@ -80,6 +85,7 @@ Source: 4 vehicles (DR1, DR2, DR3, DR4) with data
 ↓
 CollectHeaders: Returns [DR1, DR2, DR3, DR4] ✅
 CollectHeaderCols: Returns [2, 3, 4, 5] ✅
+Mode matching: Case-insensitive (all matches work) ✅
 ↓
 n = Min(4, 4) = 4
 ↓
@@ -106,8 +112,8 @@ After importing HeatMap.bas:
 | Item | Value |
 |------|-------|
 | **Files Modified** | 1 (HeatMap.bas) |
-| **Functions Fixed** | 2 (CollectHeaders, CollectHeaderCols) |
-| **Lines Changed** | 8 |
+| **Functions Fixed** | 3 (CollectHeaders, CollectHeaderCols, BuildModeIndex) |
+| **Lines Changed** | 11 |
 | **Features Added** | 1 (capacity warning) |
 | **Breaking Changes** | None |
 | **Backward Compatible** | ✅ Yes |
@@ -117,7 +123,8 @@ After importing HeatMap.bas:
 
 ## ✅ Quality Checklist
 
-- [x] Root cause identified and fixed
+- [x] Root cause identified and fixed (DR filter)
+- [x] Case sensitivity issue fixed (mode matching)
 - [x] Minimal changes (surgical fix)
 - [x] Code reviewed
 - [x] No security vulnerabilities
@@ -131,9 +138,10 @@ After importing HeatMap.bas:
 ## 🎯 Next Steps
 
 1. **Import** HeatMap.bas into your Excel file (see instructions above)
-2. **Test** with your data
+2. **Test** with your data including "transition to constant speed"
 3. **Verify** all vehicles are transferred
-4. **Report** results (success or issues)
+4. **Verify** operation modes match regardless of capitalization
+5. **Report** results (success or issues)
 
 ---
 
