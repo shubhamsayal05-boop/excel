@@ -296,6 +296,10 @@ End Function
 
 Public Function CollectRowLabels(ws As Worksheet, anc As Range) As Collection
     Dim out As New Collection, r As Long, emptyRun As Long, lastR As Long
+    Dim codeCol As Long
+    
+    '*** Use operation codes (column before anchor) for reliable matching ***
+    codeCol = anc.Column - 1
     
     On Error Resume Next
     lastR = ws.Cells(ws.Rows.count, anc.Column).End(xlUp).row
@@ -303,7 +307,8 @@ Public Function CollectRowLabels(ws As Worksheet, anc As Range) As Collection
     
     For r = anc.row + 2 To lastR
         If Trim$(ws.Cells(r, anc.Column).Value) <> "" Then
-            out.Add Trim$(ws.Cells(r, anc.Column).Value)  ' Apply Trim$ for consistency
+            ' Use operation code instead of name for matching
+            out.Add Trim$(ws.Cells(r, codeCol).Value)
             emptyRun = 0
         Else
             emptyRun = emptyRun + 1
@@ -315,10 +320,11 @@ End Function
 
 Public Function BuildModeIndex(ws As Worksheet, anc As Range) As Object
     Dim d As Object:  Set d = CreateObject("Scripting.Dictionary")
-    Dim r As Long, v, lastR As Long
+    Dim r As Long, v, codeVal, lastR As Long
+    Dim codeCol As Long
     
-    '*** Make dictionary case-insensitive for mode matching ***
-    d.CompareMode = vbTextCompare
+    '*** Use operation codes (column before anchor) for reliable matching ***
+    codeCol = anc.Column - 1
     
     On Error Resume Next
     lastR = ws.Cells(ws.Rows.count, anc.Column).End(xlUp).row
@@ -326,7 +332,11 @@ Public Function BuildModeIndex(ws As Worksheet, anc As Range) As Object
     
     For r = anc.row + 2 To lastR
         v = Trim$(ws.Cells(r, anc.Column).Value)
-        If v <> "" And Not d.Exists(v) Then d.Add v, r
+        If v <> "" Then
+            ' Use operation code as dictionary key
+            codeVal = Trim$(ws.Cells(r, codeCol).Value)
+            If codeVal <> "" And Not d.Exists(codeVal) Then d.Add codeVal, r
+        End If
     Next r
     Set BuildModeIndex = d
 End Function
