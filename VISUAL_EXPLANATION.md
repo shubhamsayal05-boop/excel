@@ -79,9 +79,9 @@ Added a warning message if source has more data than destination can hold:
 
 ```vba
 If sVehHdr.count > tVehCols.count Then
-    MsgBox "Warning: Data Transfer Sheet has X vehicles, 
-            but HeatMap Sheet can only accommodate Y vehicles.
-            Only the first Y vehicles will be transferred."
+    MsgBox "Warning: Data Transfer Sheet has X vehicles, " & _
+           "but HeatMap Sheet can only accommodate Y vehicles." & vbCrLf & _
+           "Only the first Y vehicles will be transferred."
 End If
 ```
 

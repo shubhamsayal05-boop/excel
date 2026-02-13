@@ -54,7 +54,8 @@ Mode 3                     | 110            | 210            | 310            | 
 
 Key points:
 - Make sure "Operation Modes" text is in column A (anchor text)
-- Use "DR" prefix in row below header if following the DR convention
+- Vehicle column headers should be named DR1, DR2, DR3, DR4, etc. (if following the DR convention) or any other vehicle names
+- The row below the header row (on HeatMap Sheet) can contain "DR" markers to identify vehicle columns
 - Include multiple vehicles (at least 3-4 for good testing)
 - Include multiple operation modes
 
