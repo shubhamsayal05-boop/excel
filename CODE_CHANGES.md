@@ -1,10 +1,11 @@
 # Code Changes - Detailed Comparison
 
 ## Summary
-Three changes were made to fix the data transfer issue:
+Four changes were made to fix the data transfer issue:
 1. Fixed `CollectHeaders` function - removed DR filter
 2. Fixed `CollectHeaderCols` function - removed DR filter  
 3. Added capacity warning in `RefreshHeatmap` - user notification
+4. Fixed `BuildModeIndex` function - made case-insensitive for operation mode matching
 
 ---
 
@@ -167,6 +168,59 @@ All other code remains **exactly the same**:
 
 ---
 
+## Change 4: BuildModeIndex Function (Case Sensitivity Fix)
+
+**Location**: Line 316-332 in HeatMap.bas
+
+### BEFORE (Case-Sensitive)
+```vba
+Public Function BuildModeIndex(ws As Worksheet, anc As Range) As Object
+    Dim d As Object:  Set d = CreateObject("Scripting.Dictionary")
+    Dim r As Long, v, lastR As Long
+    
+    On Error Resume Next
+    lastR = ws.Cells(ws.Rows.count, anc.Column).End(xlUp).row
+    On Error GoTo 0
+    
+    For r = anc.row + 2 To lastR
+        v = Trim$(ws.Cells(r, anc.Column).Value)
+        If v <> "" And Not d.Exists(v) Then d.Add v, r
+    Next r
+    Set BuildModeIndex = d
+End Function
+```
+
+### AFTER (Case-Insensitive)
+```vba
+Public Function BuildModeIndex(ws As Worksheet, anc As Range) As Object
+    Dim d As Object:  Set d = CreateObject("Scripting.Dictionary")
+    Dim r As Long, v, lastR As Long
+    
+    '*** Make dictionary case-insensitive for mode matching ***
+    d.CompareMode = vbTextCompare
+    
+    On Error Resume Next
+    lastR = ws.Cells(ws.Rows.count, anc.Column).End(xlUp).row
+    On Error GoTo 0
+    
+    For r = anc.row + 2 To lastR
+        v = Trim$(ws.Cells(r, anc.Column).Value)
+        If v <> "" And Not d.Exists(v) Then d.Add v, r
+    Next r
+    Set BuildModeIndex = d
+End Function
+```
+
+**What Changed**: 
+- ✅ Added: `d.CompareMode = vbTextCompare` to make dictionary case-insensitive
+
+**Impact**: 
+- Operation mode names now match regardless of capitalization
+- "transition to constant speed" matches "Transition to Constant Speed"
+- Fixes issue where modes with different casing wouldn't transfer data
+
+---
+
 ## Why These Changes Fix the Issue
 
 ### The Original Bug Flow:
@@ -174,7 +228,8 @@ All other code remains **exactly the same**:
 2. `CollectHeaderCols` skips DR columns → returns empty or incomplete list
 3. `n = Min(tVehCols.count, sVehHdr.count)` → n becomes 0 or very small
 4. Data copy loop: `For j = 1 To n` → copies 0 or few vehicles
-5. Result: **Missing data**
+5. Mode matching is case-sensitive → "transition to constant speed" ≠ "Transition to Constant Speed"
+6. Result: **Missing data**
 
 ### The Fixed Flow:
 1. `CollectHeaders` includes DR columns → returns complete list ✅
@@ -182,17 +237,19 @@ All other code remains **exactly the same**:
 3. `n = Min(tVehCols.count, sVehHdr.count)` → n is correct count ✅
 4. Data copy loop: `For j = 1 To n` → copies all available vehicles ✅
 5. Warning shown if truncation occurs ✅
-6. Result: **All data transferred** ✅
+6. Mode matching is case-insensitive → matches regardless of capitalization ✅
+7. Result: **All data transferred** ✅
 
 ---
 
 ## Lines Changed
-- Line 269-271: Removed DR filter condition
-- Line 285-287: Removed DR filter condition
-- Line 80-84: Added capacity warning
+- Line 269-271: Removed DR filter condition (CollectHeaders)
+- Line 285-287: Removed DR filter condition (CollectHeaderCols)
+- Line 80-84: Added capacity warning (RefreshHeatmap)
+- Line 320-321: Added case-insensitive mode matching (BuildModeIndex)
 
-**Total lines changed**: 8 lines
-**Functions modified**: 2 functions
+**Total lines changed**: 11 lines
+**Functions modified**: 3 functions
 **New features added**: 1 warning message
 
 This is a **minimal, surgical fix** that addresses the root cause without changing unrelated code.

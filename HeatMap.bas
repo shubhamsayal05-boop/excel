@@ -317,6 +317,9 @@ Public Function BuildModeIndex(ws As Worksheet, anc As Range) As Object
     Dim d As Object:  Set d = CreateObject("Scripting.Dictionary")
     Dim r As Long, v, lastR As Long
     
+    '*** Make dictionary case-insensitive for mode matching ***
+    d.CompareMode = vbTextCompare
+    
     On Error Resume Next
     lastR = ws.Cells(ws.Rows.count, anc.Column).End(xlUp).row
     On Error GoTo 0
