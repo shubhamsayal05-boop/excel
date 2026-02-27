@@ -92,7 +92,13 @@ Public Sub EvaluateAVLStatus()
         .Font.Color = vbWhite
     End With
 
-    lastRow = wsSheet1.Cells(wsSheet1.Rows.count, 1).End(xlUp).Row
+    ' Use the maximum of columns A, B, and C to find the true last data row.
+    ' Column A only holds section headers, so using it alone misses trailing
+    ' data rows (e.g. row 77 with op-code 10451400).
+    lastRow = Application.Max( _
+        wsSheet1.Cells(wsSheet1.Rows.count, 1).End(xlUp).Row, _
+        wsSheet1.Cells(wsSheet1.Rows.count, 2).End(xlUp).Row, _
+        wsSheet1.Cells(wsSheet1.Rows.count, 3).End(xlUp).Row)
     outRow = 2
 
     For i = 5 To lastRow
