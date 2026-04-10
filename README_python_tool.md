@@ -1,126 +1,89 @@
 # AVL-DRIVE Heatmap Tool — Python Edition
 
-A standalone Python replica of the Excel VBA-based AVL-DRIVE Heatmap Tool (version 5.1). This tool reads the original `.xlsm` workbook, performs all operations in-memory, and writes results back — completely independent of Excel.
+A **fully independent** Python replica of the Excel VBA-based AVL-DRIVE Heatmap Tool (version 5.1). This tool does **not** require the original `.xlsm` file — all reference data (Mapping Sheet, AVL-Odriv Mapping, HeatMap Template) is embedded directly in the code.
 
-## Features
-
-All six functions from the Excel VBA tool are replicated 1:1:
-
-| Button | Function | VBA Module |
-|--------|----------|------------|
-| **HeatMap** | Transfer data from Data Transfer Sheet → HeatMap Sheet | `HeatMap.bas` |
-| **Reset** | Restore HeatMap Sheet from HeatMap Template | `Reset.bas` |
-| **Evaluation** | Evaluate AVL statuses with interactive car selection | `Evaluation.bas` + `carselection.bas` |
-| **Suboperation Status** | Write colored status dots to HeatMap Sheet column R | `Updatesuboperationstatus.bas` |
-| **Operation Mode Status** | Aggregate group statuses (NOK/Acceptable/OK) | `OperationModeStatus.bas` |
-| **Export** | Download any sheet's visible data as a standalone XLSX | `Export.bas` |
-
-Additionally:
-- **Clear Sheet1** — Clear all data in Sheet1 (`Clearall.bas`)
-- **Sheet Preview** — View any sheet's data in the browser
-- **Download** — Download the modified workbook with all changes applied
-
-## Evaluation Logic (1:1 match with VBA)
-
-The evaluation follows these exact rules from the VBA code:
-
-### P1 Status Detection
-- Font colour `#008000` (indexed 17) → **GREEN**
-- Font colour `#FFFF00` (indexed 13) → **YELLOW**  
-- Font colour `#FF0000` (indexed 10) → **RED**
-- Font colour `#FFFFFF` (white/default) → **N/A**
-
-### Status Evaluation Rules
-1. P1 = N/A → **N/A**
-2. AVL < 7 OR P1 = RED → **RED**
-3. AVL ≥ 7 AND P1 = YELLOW → **YELLOW**
-4. AVL ≥ 7 AND P1 = GREEN AND no benchmark → **GREEN**
-5. AVL ≥ 7 AND P1 = GREEN AND tested ≥ target → **GREEN**
-6. AVL ≥ 7 AND P1 = GREEN AND (target − tested) ≤ 2 → **GREEN**
-7. AVL ≥ 7 AND P1 = GREEN AND (target − tested) > 2 → **YELLOW**
-
-### Final Status Combination
-- Either RED → **RED**
-- Either YELLOW → **YELLOW**
-- Both GREEN → **GREEN**
-- One GREEN + one N/A → **GREEN**
-- Both N/A → **N/A**
-
-### Operation Mode Status Aggregation
-- Any RED sub-operation → **NOK** (red)
-- Yellow sub-operations > 35% → **Acceptable** (yellow)
-- Otherwise → **OK** (green)
-
-## Installation
+## Quick Start
 
 ```bash
 pip install -r requirements.txt
-```
-
-Requirements:
-- Python 3.9+
-- openpyxl ≥ 3.1.0
-- streamlit ≥ 1.30.0
-- pandas ≥ 2.0.0
-
-## Usage
-
-### Streamlit GUI (recommended)
-
-```bash
 streamlit run avl_heatmap_tool.py
 ```
 
-Then open http://localhost:8501 in your browser and upload the `.xlsm` file.
+## Input Modes
 
-### Python API (programmatic use)
+### Standalone Mode (Recommended)
+Upload your two data files directly — no `.xlsm` needed:
 
-```python
-import openpyxl
-from avl_heatmap_tool import *
+1. **Data Transfer Sheet** (`.xlsx` or `.csv`) — AVL-DRIVE scores per vehicle
+2. **Sheet1** (`.xlsx` only) — Benchmark data with coloured P1 status dots
 
-wb = openpyxl.load_workbook("AVLDrive_Heatmap_Tool version_5.1.xlsm", keep_vba=True)
+### Legacy Mode
+Upload the original `AVLDrive_Heatmap_Tool version_5.1.xlsm` file.
 
-# Refresh heatmap
-msg = refresh_heatmap(wb)
-print(msg)
+## Data Formats
 
-# Run evaluation
-msg = evaluate_avl_status(wb, "MY27_K0_X0_QG3_V131_0725", "MY27_K0_QG3_X0_V528_0226")
-print(msg)
+### Data Transfer Sheet
+Users paste AVL-DRIVE scores into this sheet. The format is fixed but car names and values change:
 
-# Update sub-operation status
-msg = update_sub_operation_heatmap(wb)
-print(msg)
+| Col A | Col B | Col D | Col F | Col H | Col J |
+|-------|-------|-------|-------|-------|-------|
+| | Operation Modes | *Car 1* | *Car 2* | *Car 3* | *Car 4* |
+| | Operation Modes | DR | DR | DR | DR |
+| 10000000 | AVL-DRIVE Rating | 7.6 | 7.4 | 7.7 | 7.6 |
+| 10100000 | Drive away | 7.7 | 7.8 | 7.6 | 7.8 |
+| 10101300 | Creep | 7.9 | 7.5 | 7.3 | 7.9 |
+| ... | ... | ... | ... | ... | ... |
 
-# Update operation mode status
-msg = update_operation_mode_status(wb)
-print(msg)
+- **Col A**: Operation code (numeric, e.g. 10101300)
+- **Col B**: Operation name
+- **Cols D, F, H, J…**: Vehicle scores (even columns, odd columns are empty separators)
+- **Row 1**: Car/vehicle names
+- **Row 2**: "DR" markers
 
-# Save
-wb.save("output.xlsm")
-wb.close()
-```
+### Sheet1 (Benchmark Data)
+Must be `.xlsx` to preserve P1 status colours. Users paste benchmark data here:
 
-## Sheet Structure
+| Col A | Col B | Col C | Col F | Col I | Col J | Col L | Col O | Col P |
+|-------|-------|-------|-------|-------|-------|-------|-------|-------|
+| | | | Drivability | | | Responsiveness | | |
+| | | | Current Status | *Car 1* | *Car 2* | Current Status | *Car 1* | *Car 2* |
+| USE CASE | | | P1 | | | P1 | | |
+| Drive away | | | | 98.8 | | | 70.9 | |
+| | 10101300 | Creep Eng On | ● | 100 | 73.7 | ● | 100 | 100 |
 
-The tool works with these sheets in the workbook:
+- **Col B**: Op code (numeric)
+- **Col C**: Sub-operation name
+- **Col F**: Drivability P1 status (coloured ● dot — green=OK, yellow=warning, red=fail)
+- **Col L**: Responsiveness P1 status (coloured ● dot)
+- **Car columns (I/J, O/P)**: Benchmark percentage values
+- **Row 2**: Car names appear here
 
-| Sheet | Purpose |
-|-------|---------|
-| **Sheet1** | Source data with op codes (col B), operation names (col C), P1 status dots (col F/L), benchmark values |
-| **HeatMap Sheet** | Visual heatmap with vehicle AVL scores, status column (R) |
-| **HeatMap Template** | Clean template for resetting HeatMap Sheet |
-| **Data Transfer Sheet** | Source data for HeatMap refresh |
-| **Mapping Sheet** | Op code → operation name mapping (58 entries) |
-| **AVL-Odriv Mapping** | Extended op code mapping with sub-operation variants (99 entries) |
-| **Evaluation Results** | Output sheet created by the Evaluation function |
+## Operations
+
+| # | Button | Description |
+|---|--------|-------------|
+| 1 | **HeatMap** | Transfer data from Data Transfer Sheet → HeatMap Sheet |
+| 2 | **Reset** | Restore HeatMap Sheet from built-in template |
+| 3 | **Evaluation** | Evaluate AVL statuses (select Target + Tested cars) |
+| 4 | **Suboperation Status** | Write coloured status dots to HeatMap Sheet |
+| 5 | **Operation Mode Status** | Aggregate NOK/Acceptable/OK per operation group |
+| 6 | **Clear Sheet1** | Clear all data from Sheet1 |
 
 ## Architecture
 
-The Python tool is a single file (`avl_heatmap_tool.py`) with:
-- **Utility functions** — cell value reading, type conversion, colour resolution
-- **Colour/status logic** — P1 detection, evaluation rules, status combination
-- **Six operation modules** — each mirroring a VBA module exactly
-- **Streamlit GUI** — interactive web interface with file upload/download
-- **Data preview** — pandas DataFrame display of any sheet
+The tool embeds all reference data as Python constants:
+- **MAPPING_SHEET_DATA** — 58 operation code → name mappings
+- **AVL_ODRIV_MAPPING_DATA** — 99 op code → sub-operation name mappings
+- **HEATMAP_TEMPLATE_ROWS** — 58 template rows with bold/group-header flags
+
+When users upload their data files, the tool:
+1. Copies Sheet1 (preserving font colours for P1 status detection)
+2. Copies Data Transfer Sheet
+3. Builds HeatMap Template, HeatMap Sheet, Mapping Sheet, and AVL-Odriv Mapping from embedded data
+4. Assembles a complete in-memory workbook ready for all operations
+
+## Dependencies
+
+- `openpyxl` — Excel file reading/writing with formatting
+- `streamlit` — Web GUI
+- `pandas` — Data preview and CSV handling

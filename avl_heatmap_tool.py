@@ -1,18 +1,24 @@
 #!/usr/bin/env python3
 """
-AVL-DRIVE Heatmap Tool — Python Edition
-=========================================
+AVL-DRIVE Heatmap Tool — Python Edition (Standalone)
+=====================================================
 A 1:1 standalone Python replica of the Excel VBA-based AVL-DRIVE Heatmap Tool
-(version 5.1). Reads the original `.xlsm` workbook, performs all operations
-in-memory using openpyxl, and writes the results back.
+(version 5.1). Completely independent — does NOT require the original .xlsm file.
+
+Users upload their own data files:
+  - Data Transfer Sheet — CSV or Excel with AVL-DRIVE scores per vehicle
+  - Sheet1              — Excel (.xlsx) with benchmark data and coloured P1 dots
+
+All reference data (Mapping Sheet, AVL-Odriv Mapping, HeatMap Template) is
+embedded directly in this file.
 
 Provides a Streamlit GUI with the same six buttons as the Excel ribbon:
-  1. HeatMap   — Refresh heatmap from Data Transfer Sheet
-  2. Reset     — Restore HeatMap Sheet from HeatMap Template
-  3. Evaluation — Evaluate AVL statuses with car selection
-  4. Suboperation Status — Write colored dots to HeatMap Sheet
-  5. Operation Mode Status — Aggregate group statuses
-  6. Export    — Export visible selection as XLSX
+  1. HeatMap          — Refresh heatmap from Data Transfer Sheet
+  2. Reset            — Restore HeatMap Sheet from HeatMap Template
+  3. Evaluation       — Evaluate AVL statuses with car selection
+  4. Suboperation     — Write coloured dots to HeatMap Sheet
+  5. Op Mode Status   — Aggregate group statuses
+  6. Export           — Export visible data as XLSX
 
 Usage:
     streamlit run avl_heatmap_tool.py
@@ -33,13 +39,242 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 import streamlit as st
 
-# ─── Constants (mirrors VBA Public Const) ────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+#  EMBEDDED REFERENCE DATA
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Mapping Sheet — 58 entries (op code -> canonical operation name)
+MAPPING_SHEET_DATA: List[Tuple[int, str]] = [
+    (10000000, "AVL-DRIVE Rating"),
+    (10100000, "Drive away"),
+    (10101300, "Creep"),
+    (10101100, "Standing start"),
+    (10102400, "Rolling start"),
+    (10120000, "Acceleration"),
+    (10120100, "Full load"),
+    (10120200, "Constant load"),
+    (10120300, "Load increase"),
+    (10120900, "Load decrease"),
+    (10030000, "Tip in"),
+    (10030100, "At deceleration"),
+    (10030200, "At constant speed / acceleration"),
+    (10040000, "Tip out"),
+    (10040300, "At constant speed / acceleration"),
+    (10040400, "At deceleration"),
+    (10070100, "Transition to constant speed"),
+    (10070000, "Deceleration"),
+    (10070500, "Without brake"),
+    (10071000, "Constant brake"),
+    (10090000, "Gear shift"),
+    (10092300, "Power-on upshift"),
+    (10092500, "Tip out upshift"),
+    (10098200, "Tip in upshift"),
+    (10098400, "Load reversal upshift"),
+    (10092100, "Coast / brake-on upshift"),
+    (10093200, "Power-on downshift"),
+    (10098100, "Tip out downshift"),
+    (10093100, "Kick down / tip in downshift"),
+    (10098300, "Load reversal downshift"),
+    (10093400, "Coast / brake-on downshift"),
+    (10097800, "Maneuvering"),
+    (10097900, "Selector lever change"),
+    (10080000, "Constant speed"),
+    (10080200, "Without load"),
+    (10080100, "Constant load"),
+    (10010000, "Idle"),
+    (10011000, "Vehicle stationary"),
+    (10010200, "Air conditioning on / off"),
+    (10010700, "Transition to idle"),
+    (10015200, "Rev-up"),
+    (10020000, "Engine start"),
+    (10020100, "Manual start"),
+    (10020200, "Auto start vehicle stationary"),
+    (10020300, "Auto start vehicle moving"),
+    (10140000, "Engine shut off"),
+    (10140600, "Manual stop"),
+    (10140700, "Auto stop"),
+    (10460000, "TCC control"),
+    (10467300, "Converter controlled slip"),
+    (10467200, "Converter lock up"),
+    (10467500, "Converter release"),
+    (10430000, "Cylinder deactivation"),
+    (10431300, "Cylinder deactivation"),
+    (10431400, "Cylinder reactivation"),
+    (10450000, "Vehicle stationary"),
+    (10451400, "Vehicle stop"),
+    (10451500, "Vehicle at standstill"),
+]
+
+# AVL-Odriv Mapping — maps AVL op codes to Sheet1 sub-operation names
+AVL_ODRIV_MAPPING_DATA: List[Tuple[int, str]] = [
+    (10000000, "AVL-DRIVE Rating"),
+    (10100000, "Drive away"),
+    (10101300, "Creep"),
+    (10101300, "Drive Away Creep Eng On"),
+    (10101300, "Drive Away Creep Eng On - Cold"),
+    (10101300, "Drive Away Creep Eng Off"),
+    (10101100, "Standing start"),
+    (10101100, "DASS Eng On"),
+    (10101100, "DASS Eng On - Cold"),
+    (10101100, "DASS Eng Off quick"),
+    (10101100, "DASS Eng Off slow"),
+    (10101100, "DASS - Eng Off - COM"),
+    (10101100, "DASS - Extended Eng Off"),
+    (10101100, "DASS"),
+    (10102400, "Rolling start"),
+    (10102400, "DA Rolling Start"),
+    (10120000, "Acceleration"),
+    (10120100, "Full load"),
+    (10120200, "Constant load"),
+    (10120200, "Accel Cst Load"),
+    (10120200, "Accel Cst Load - Cold"),
+    (10120300, "Load increase"),
+    (10120300, "Accel Load Increase"),
+    (10120900, "Load decrease"),
+    (10120900, "Accel Load Decrease"),
+    (10030000, "Tip in"),
+    (10030100, "At deceleration"),
+    (10030100, "Tip in at deceleration"),
+    (10030200, "At constant speed / acceleration"),
+    (10030200, "Tip in at constant speed"),
+    (10040000, "Tip out"),
+    (10040300, "Tip Out At Constant Speed"),
+    (10040300, "At constant speed / acceleration"),
+    (10040400, "Tip Out After Acceleration"),
+    (10040400, "At deceleration"),
+    (10070000, "Deceleration"),
+    (10070100, "Decel Trans to Cst Spd"),
+    (10070100, "Decel - Trans to Cst Spd - Cold"),
+    (10070500, "Without brake"),
+    (10070500, "Decel Without Brake"),
+    (10070500, "Decel Without Brake - Cold"),
+    (10071000, "Constant brake"),
+    (10071000, "Decel Cst Brake"),
+    (10071000, "Decel Cst Brake - Cold"),
+    (10090000, "Gear shift"),
+    (10092300, "Power-on upshift"),
+    (10092300, "Power-on upshift"),
+    (10092300, "Power-on upshift Cold"),
+    (10092500, "Tip out upshift"),
+    (10098200, "Tip in upshift"),
+    (10098400, "Load reversal upshift"),
+    (10092100, "Coast / brake-on upshift"),
+    (10093200, "Power-on downshift"),
+    (10098100, "Tip out downshift"),
+    (10093100, "Kick down / tip in downshift"),
+    (10093100, "(PT) KD - tip in downshift"),
+    (10093100, "(TO) KD - tip in downshift"),
+    (10098300, "Load reversal downshift"),
+    (10093400, "Coast / brake-on downshift"),
+    (10093100, "Coast-brake-on downshift Cold"),
+    (10097800, "Maneuvering"),
+    (10097800, "Maneuvering - Cold"),
+    (10097800, "Maneuvering with throttle"),
+    (10097900, "Selector lever change"),
+    (10097900, "Lever change"),
+    (10080000, "Constant speed"),
+    (10080200, "Without load"),
+    (10080200, "Cst Speed Without Load"),
+    (10080200, "Cst Speed Without Load - Cold"),
+    (10080100, "Constant load"),
+    (10080100, "Cst Speed Cst Load"),
+    (10080100, "Cst Speed Cst Load - Cold"),
+    (10010000, "Idle"),
+    (10011000, "Vehicle stationary"),
+    (10010200, "Air conditioning on / off"),
+    (10010200, "Idle Air Cond On-Off"),
+    (10010700, "Transition to idle"),
+    (10015200, "Rev-up"),
+    (10020000, "Engine start"),
+    (10020100, "Manual start"),
+    (10020200, "Auto start vehicle stationary"),
+    (10020300, "Auto start vehicle moving"),
+    (10140000, "Engine shut off"),
+    (10140600, "Manual stop"),
+    (10140700, "Auto stop"),
+    (10460000, "TCC control"),
+    (10467300, "Converter controlled slip"),
+    (10467200, "Converter lock up"),
+    (10467500, "Converter release"),
+    (10430000, "Cylinder deactivation"),
+    (10431300, "Cylinder deactivation"),
+    (10431400, "Cylinder reactivation"),
+    (10450000, "Vehicle stationary"),
+    (10450000, "Idle Vehicle Stationary"),
+    (10450000, "Idle Vehicle Stationary - Cold"),
+    (10451400, "Vehicle stop"),
+    (10451400, "Vehicle Stop"),
+    (10451400, "Vehicle Stop - Cold"),
+    (10451500, "Vehicle at standstill"),
+]
+
+# HeatMap Template row definitions: (row_num, op_code, name, is_bold_group_header)
+HEATMAP_TEMPLATE_ROWS: List[Tuple[int, int, str, bool]] = [
+    (4, 10000000, "AVL-DRIVE Rating", False),
+    (5, 10100000, "Drive away", True),
+    (6, 10101300, "Creep", False),
+    (7, 10101100, "Standing start", False),
+    (8, 10102400, "Rolling start", False),
+    (9, 10120000, "Acceleration", True),
+    (10, 10120100, "Full load", False),
+    (11, 10120200, "Constant load", False),
+    (12, 10120300, "Load increase", False),
+    (13, 10120900, "Load decrease", False),
+    (14, 10030000, "Tip in", True),
+    (15, 10030100, "At deceleration", False),
+    (16, 10030200, "At constant speed / acceleration", False),
+    (17, 10040000, "Tip out", True),
+    (18, 10040300, "At constant speed / acceleration", False),
+    (19, 10040400, "At deceleration", False),
+    (20, 10070000, "Deceleration", True),
+    (21, 10070500, "Without brake", False),
+    (22, 10070100, "Transition to constant speed", False),
+    (23, 10071000, "Constant Brake", False),
+    (24, 10090000, "Gear shift", True),
+    (25, 10092300, "Power-on upshift", False),
+    (26, 10092500, "Tip out upshift", False),
+    (27, 10098200, "Tip in upshift", False),
+    (28, 10098400, "Load reversal upshift", False),
+    (29, 10092100, "Coast / brake-on upshift", False),
+    (30, 10093200, "Power-on downshift", False),
+    (31, 10098100, "Tip out downshift", False),
+    (32, 10093100, "Kick down / tip in downshift", False),
+    (33, 10098300, "Load reversal downshift", False),
+    (34, 10093400, "Coast / brake-on downshift", False),
+    (35, 10097800, "Maneuvering", False),
+    (36, 10097900, "Selector lever change", False),
+    (37, 10080000, "Constant speed", True),
+    (38, 10080200, "Without load", False),
+    (39, 10080100, "Constant load", False),
+    (40, 10010000, "Idle", True),
+    (41, 10011000, "Vehicle stationary", False),
+    (42, 10010200, "Air conditioning on / off", False),
+    (43, 10010700, "Transition to idle", False),
+    (44, 10015200, "Rev-up", False),
+    (45, 10020000, "Engine start", True),
+    (46, 10020100, "Manual start", False),
+    (47, 10020200, "Auto start vehicle stationary", False),
+    (48, 10020300, "Auto start vehicle moving", False),
+    (49, 10140000, "Engine shut off", True),
+    (50, 10140600, "Manual stop", False),
+    (51, 10140700, "Auto stop", False),
+    (52, 10460000, "TCC control", True),
+    (53, 10467300, "Converter controlled slip", False),
+    (54, 10467200, "Converter lock up", False),
+    (55, 10467500, "Converter release", False),
+    (56, 10430000, "Cylinder deactivation", True),
+    (57, 10431300, "Cylinder deactivation", False),
+    (58, 10431400, "Cylinder reactivation", False),
+    (59, 10450000, "Vehicle stationary", True),
+    (60, 10451400, "Vehicle stop", False),
+    (61, 10451500, "Vehicle at standstill", False),
+]
+
+# ─── Sheet name constants ────────────────────────────────────────────────────
 
 SHEET_T = "HeatMap Sheet"
 SHEET_S = "Data Transfer Sheet"
 TEMPLATE_SHEET = "HeatMap Template"
-MAPPING_SHEET = "Mapping Sheet"
-AVL_ODRIV_MAPPING = "AVL-Odriv Mapping"
 SHEET1 = "Sheet1"
 EVAL_RESULTS = "Evaluation Results"
 
@@ -50,11 +285,9 @@ TESTED_VEHICLE_HEADER = "Tested Vehicle"
 HIDE_IDS_COLA = True
 DELETE_EMPTY = False
 
-CAR_DATA_START_COL = 8  # Column H in Sheet1
-
 # Vehicle columns in HeatMap Sheet (1-indexed)
-VEHICLE_COLS = [4, 6, 8, 10, 12, 14, 16]      # D F H J L N P
-SEPARATOR_COLS = [5, 7, 9, 11, 13, 15, 17]     # E G I K M O Q
+VEHICLE_COLS = [4, 6, 8, 10, 12, 14, 16]     # D F H J L N P
+SEPARATOR_COLS = [5, 7, 9, 11, 13, 15, 17]   # E G I K M O Q
 
 # Excel indexed colour palette (standard)
 _INDEXED_COLORS = {
@@ -64,12 +297,6 @@ _INDEXED_COLORS = {
     15: "00FFFF", 16: "800000", 17: "008000", 18: "000080", 19: "808000",
     20: "800080", 21: "008080", 22: "C0C0C0", 23: "808080",
 }
-
-# Color → P1 status mapping
-_GREEN_HEX = {"008000", "00B050", "009E47"}
-_YELLOW_HEX = {"FFFF00", "FFC000", "FFD966", "E3E100"}
-_RED_HEX = {"FF0000", "C00000"}
-_WHITE_HEX = {"FFFFFF"}
 
 # Fill for status cells
 FILL_GREEN = PatternFill(start_color="00B050", end_color="00B050", fill_type="solid")
@@ -83,6 +310,9 @@ FONT_BLACK = Font(color="000000")
 FONT_BOLD_WHITE = Font(color="FFFFFF", bold=True)
 
 BULLET = "\u25CF"  # ●
+
+CAR_DATA_START_COL = 8  # Column H in Sheet1
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  UTILITY HELPERS
@@ -135,7 +365,6 @@ def _resolve_font_color_hex(cell) -> str:
         if idx in _INDEXED_COLORS:
             return _INDEXED_COLORS[idx].upper()
     if fc.type == "theme":
-        # Theme colours need the workbook theme; approximate common ones
         return "FFFFFF"
     return "FFFFFF"
 
@@ -145,14 +374,14 @@ def _resolve_fill_color_hex(cell) -> str:
     fill = cell.fill
     if fill is None or fill.fgColor is None:
         return "000000"
-    fg = fill.fgColor
-    if fg.type == "rgb" and fg.rgb:
-        h = str(fg.rgb)
+    fg_color = fill.fgColor
+    if fg_color.type == "rgb" and fg_color.rgb:
+        h = str(fg_color.rgb)
         if len(h) == 8:
             h = h[2:]
         return h.upper()
-    if fg.type == "indexed" and fg.indexed is not None:
-        idx = fg.indexed
+    if fg_color.type == "indexed" and fg_color.indexed is not None:
+        idx = fg_color.indexed
         if idx in _INDEXED_COLORS:
             return _INDEXED_COLORS[idx].upper()
     return "000000"
@@ -194,6 +423,131 @@ def _has_value(v: Any) -> bool:
         return s != "" and s != "0"
 
 
+def _last_data_row(ws, col: int) -> int:
+    """Find the last non-empty row in a column."""
+    for r in range(ws.max_row, 0, -1):
+        if _cell_val(ws, r, col) is not None:
+            return r
+    return 1
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  BUILD INTERNAL WORKBOOK FROM UPLOADED DATA
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def build_workbook_from_uploads(
+    dt_wb: openpyxl.Workbook,
+    s1_wb: openpyxl.Workbook,
+) -> openpyxl.Workbook:
+    """Create a complete internal workbook from two user-uploaded files.
+
+    Parameters
+    ----------
+    dt_wb : user-uploaded Data Transfer Sheet workbook (first sheet used)
+    s1_wb : user-uploaded Sheet1 workbook (first sheet used, preserves colours)
+
+    Returns
+    -------
+    openpyxl.Workbook with all required sheets populated.
+    """
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+
+    # 1. Copy Sheet1 from upload (preserves P1 colours)
+    _copy_sheet(s1_wb.active, wb, SHEET1)
+
+    # 2. Copy Data Transfer Sheet from upload
+    _copy_sheet(dt_wb.active, wb, SHEET_S)
+
+    # 3. Build HeatMap Template (from embedded data)
+    _build_heatmap_template(wb)
+
+    # 4. Build HeatMap Sheet (copy of template)
+    _build_heatmap_template(wb, sheet_name=SHEET_T)
+
+    # 5. Build Mapping Sheet (from embedded data)
+    _build_mapping_sheet(wb)
+
+    # 6. Build AVL-Odriv Mapping (from embedded data)
+    _build_avl_odriv_mapping(wb)
+
+    return wb
+
+
+def _copy_sheet(src_ws, dst_wb: openpyxl.Workbook, name: str):
+    """Copy an entire worksheet into dst_wb with values and formatting."""
+    dst_ws = dst_wb.create_sheet(name)
+    for row in src_ws.iter_rows(min_row=1, max_row=src_ws.max_row,
+                                 min_col=1, max_col=src_ws.max_column):
+        for cell in row:
+            dst_cell = dst_ws.cell(cell.row, cell.column)
+            dst_cell.value = cell.value
+            if cell.has_style:
+                dst_cell.font = copy.copy(cell.font)
+                dst_cell.fill = copy.copy(cell.fill)
+                dst_cell.alignment = copy.copy(cell.alignment)
+                dst_cell.border = copy.copy(cell.border)
+                dst_cell.number_format = cell.number_format
+    for col_letter, dim in src_ws.column_dimensions.items():
+        dst_ws.column_dimensions[col_letter].width = dim.width
+    for row_num, dim in src_ws.row_dimensions.items():
+        dst_ws.row_dimensions[row_num].height = dim.height
+    for merge_range in src_ws.merged_cells.ranges:
+        dst_ws.merge_cells(str(merge_range))
+
+
+def _build_heatmap_template(wb: openpyxl.Workbook, sheet_name: str = TEMPLATE_SHEET):
+    """Create the HeatMap Template sheet from embedded data."""
+    ws = wb.create_sheet(sheet_name)
+
+    # Row 1: header label
+    ws.cell(1, 4).value = TARGET_VEHICLE_HEADER
+    ws.cell(1, 4).font = Font(name="Arial", size=16)
+
+    # Row 2: "Operation Modes" + Vehicle placeholders + Status + Comments
+    ws.cell(2, 2).value = ANCHOR_TEXT
+    ws.cell(2, 2).font = Font(bold=True)
+    for vc in VEHICLE_COLS:
+        ws.cell(2, vc).value = "Vehicle"
+    ws.cell(2, 18).value = "Status"
+    ws.cell(2, 19).value = "Comments"
+
+    # Row 3: DR markers
+    for vc in VEHICLE_COLS:
+        ws.cell(3, vc).value = "DR"
+
+    # Data rows
+    for row_num, op_code, name, is_bold in HEATMAP_TEMPLATE_ROWS:
+        ws.cell(row_num, 1).value = op_code
+        ws.cell(row_num, 2).value = name
+        if is_bold:
+            ws.cell(row_num, 2).font = Font(bold=True)
+
+    # Column widths
+    ws.column_dimensions["A"].width = 12
+    ws.column_dimensions["B"].width = 38
+    for vc in VEHICLE_COLS:
+        ws.column_dimensions[get_column_letter(vc)].width = 10
+    ws.column_dimensions["R"].width = 12
+    ws.column_dimensions["S"].width = 25
+
+
+def _build_mapping_sheet(wb: openpyxl.Workbook):
+    """Create the Mapping Sheet from embedded data."""
+    ws = wb.create_sheet("Mapping Sheet")
+    for i, (code, name) in enumerate(MAPPING_SHEET_DATA, 1):
+        ws.cell(i, 1).value = code
+        ws.cell(i, 2).value = name
+
+
+def _build_avl_odriv_mapping(wb: openpyxl.Workbook):
+    """Create the AVL-Odriv Mapping sheet from embedded data."""
+    ws = wb.create_sheet("AVL-Odriv Mapping")
+    for i, (code, name) in enumerate(AVL_ODRIV_MAPPING_DATA, 1):
+        ws.cell(i, 1).value = code
+        ws.cell(i, 2).value = name
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  COLOUR / STATUS LOGIC  (mirrors Evaluation.bas)
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -201,16 +555,15 @@ def _has_value(v: Any) -> bool:
 def get_p1_status_from_color(cell) -> str:
     """Determine P1 status from the cell's font colour (indexed or RGB).
 
-    Mapping (from actual data analysis):
-        indexed 17 / #008000  → GREEN
-        indexed 13 / #FFFF00  → YELLOW
-        indexed 10 / #FF0000  → RED
-        #FFFFFF / white       → N/A
+    Mapping:
+        indexed 17 / #008000  -> GREEN
+        indexed 13 / #FFFF00  -> YELLOW
+        indexed 10 / #FF0000  -> RED
+        #FFFFFF / white       -> N/A
     """
     hex_color = _resolve_font_color_hex(cell)
     r, g, b = _hex_to_rgb(hex_color)
 
-    # Check fill colour first (mirrors VBA MapColorToStatus)
     fill_hex = _resolve_fill_color_hex(cell)
     fr, fg, fb = _hex_to_rgb(fill_hex)
 
@@ -222,7 +575,7 @@ def get_p1_status_from_color(cell) -> str:
     if _is_near(fr, fg, fb, 255, 0, 0) or _is_near(fr, fg, fb, 192, 0, 0):
         return "RED"
 
-    # Font colour checks (broader tolerance for the most common)
+    # Font colour checks
     if _is_near(r, g, b, 0, 128, 0, 5):
         return "GREEN"
     if _is_near(r, g, b, 0, 176, 80) or _is_near(r, g, b, 0, 158, 71):
@@ -309,7 +662,7 @@ def color_cell(ws, row: int, col: int, status: str):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  1.  HEATMAP REFRESH  (mirrors HeatMap.bas → RefreshHeatmap)
+#  1.  HEATMAP REFRESH  (mirrors HeatMap.bas -> RefreshHeatmap)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _collect_dest_vehicle_cols(ws, anc_row: int, anc_col: int) -> List[int]:
@@ -322,7 +675,6 @@ def _collect_dest_vehicle_cols(ws, anc_row: int, anc_col: int) -> List[int]:
             out.append(c)
     if out:
         return out
-    # Fallback: contiguous headers until COMMENTS
     for c in range(anc_col + 1, last_c + 1):
         v = _trim(_cell_val(ws, anc_row, c))
         if v.upper() == "COMMENTS":
@@ -461,7 +813,6 @@ def refresh_heatmap(wb) -> str:
 
 
 def _hide_rows_missing_last_vehicle(ws, anc_row: int, anc_col: int, last_veh_col: int):
-    """Mark rows hidden (openpyxl row_dimensions)."""
     last_r = ws.max_row
     for r in range(anc_row + 2, last_r + 1):
         v = _trim(_cell_val(ws, r, anc_col))
@@ -482,70 +833,33 @@ def _delete_rows_missing_last_vehicle(ws, anc_row: int, anc_col: int, last_veh_c
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  2.  RESET  (mirrors Reset.bas → ResetTemplate_From_Sheet4)
+#  2.  RESET  (mirrors Reset.bas)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def reset_heatmap(wb) -> str:
-    """Copy HeatMap Template over HeatMap Sheet."""
-    if TEMPLATE_SHEET not in wb.sheetnames:
-        return f"Template sheet '{TEMPLATE_SHEET}' not found."
-    if SHEET_T not in wb.sheetnames:
-        return f"Destination sheet '{SHEET_T}' not found."
+    """Reset the HeatMap Sheet by rebuilding from embedded template data."""
+    if SHEET_T in wb.sheetnames:
+        idx = wb.sheetnames.index(SHEET_T)
+        del wb[SHEET_T]
+    else:
+        idx = len(wb.sheetnames)
 
-    ws_src = wb[TEMPLATE_SHEET]
-    ws_dst = wb[SHEET_T]
-
-    # Unmerge all merged cells in destination first
-    for merge_range in list(ws_dst.merged_cells.ranges):
-        ws_dst.unmerge_cells(str(merge_range))
-
-    # Clear destination
-    for row in ws_dst.iter_rows(min_row=1, max_row=ws_dst.max_row,
-                                 min_col=1, max_col=ws_dst.max_column):
-        for cell in row:
-            cell.value = None
-
-    # Copy values and basic formatting from template
-    for row in ws_src.iter_rows(min_row=1, max_row=ws_src.max_row,
-                                 min_col=1, max_col=ws_src.max_column):
-        for cell in row:
-            dst_cell = ws_dst.cell(cell.row, cell.column)
-            dst_cell.value = cell.value
-            if cell.has_style:
-                dst_cell.font = copy.copy(cell.font)
-                dst_cell.fill = copy.copy(cell.fill)
-                dst_cell.alignment = copy.copy(cell.alignment)
-                dst_cell.border = copy.copy(cell.border)
-                dst_cell.number_format = cell.number_format
-
-    # Copy column widths
-    for col_letter, dim in ws_src.column_dimensions.items():
-        ws_dst.column_dimensions[col_letter].width = dim.width
-
-    # Copy row heights
-    for row_num, dim in ws_src.row_dimensions.items():
-        ws_dst.row_dimensions[row_num].height = dim.height
-
-    # Copy merged cell ranges from template
-    for merge_range in ws_src.merged_cells.ranges:
-        ws_dst.merge_cells(str(merge_range))
-
-    # Unhide all rows
-    for r in range(1, ws_dst.max_row + 1):
-        ws_dst.row_dimensions[r].hidden = False
+    _build_heatmap_template(wb, sheet_name=SHEET_T)
+    ws = wb[SHEET_T]
+    wb.move_sheet(ws, offset=idx - len(wb.sheetnames) + 1)
 
     return "HeatMap Sheet has been reset from template."
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  3.  EVALUATION  (mirrors Evaluation.bas → EvaluateAVLStatus)
+#  3.  EVALUATION  (mirrors Evaluation.bas -> EvaluateAVLStatus)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def get_available_car_names(ws) -> List[str]:
     """Scan row 2 of Sheet1 from col H onwards for unique car names."""
     names: List[str] = []
     last_col = ws.max_column
-    skip_words = {"status", "p1", "p2", "p3", "lowest events"}
+    skip_words = {"status", "p1", "p2", "p3", "lowest events", "current status"}
     for col in range(CAR_DATA_START_COL, last_col + 1):
         name = _trim(_cell_val(ws, 2, col))
         if not name:
@@ -584,9 +898,9 @@ def _get_tested_avl(ws_heatmap, op_code, tested_car_name: str) -> float:
                 avl_col = col
                 break
 
-    # Default to column 8
+    # Default to last vehicle column
     if avl_col == 0:
-        avl_col = 8
+        avl_col = VEHICLE_COLS[-1]
 
     # Search column A for op code
     for r in range(1, ws_heatmap.max_row + 1):
@@ -614,40 +928,39 @@ def evaluate_avl_status(wb, target_car: str, tested_car: str) -> str:
     ws1 = wb[SHEET1]
     ws_hm = wb[SHEET_T]
 
-    # Find columns in Drivability section (starts around col 8)
     target_col = _find_car_column(ws1, target_car)
     tested_col = _find_car_column(ws1, tested_car)
 
     if target_col == 0 or tested_col == 0:
-        return f"Could not find data columns for selected cars.\nTarget: {target_car} (col {target_col})\nTested: {tested_car} (col {tested_col})"
+        return (
+            f"Could not find data columns for selected cars.\n"
+            f"Target: {target_car} (col {target_col})\n"
+            f"Tested: {tested_car} (col {tested_col})"
+        )
 
-    # Find columns in Responsiveness section (starts at col 12)
+    # Responsiveness section starts at col 12
     target_resp_col = _find_car_column(ws1, target_car, 12)
     tested_resp_col = _find_car_column(ws1, tested_car, 12)
 
     if target_resp_col == 0 or tested_resp_col == 0:
-        return f"Could not find responsiveness columns for selected cars."
+        return "Could not find responsiveness columns for selected cars."
 
-    # Delete existing results sheet if present
     if EVAL_RESULTS in wb.sheetnames:
         del wb[EVAL_RESULTS]
 
-    # Create new results sheet
     ws_r = wb.create_sheet(EVAL_RESULTS)
 
-    # Header row
     headers = [
         "Op Code", "Operation", "Tested AVL",
-        f"Driv P1", f"Driv Target ({target_car})", f"Driv Tested ({tested_car})", "Driv Status",
-        f"Resp P1", f"Resp Target ({target_car})", f"Resp Tested ({tested_car})", "Resp Status",
-        "Final Status"
+        "Driv P1", f"Driv Target ({target_car})", f"Driv Tested ({tested_car})", "Driv Status",
+        "Resp P1", f"Resp Target ({target_car})", f"Resp Tested ({tested_car})", "Resp Status",
+        "Final Status",
     ]
     for col_idx, h in enumerate(headers, 1):
         cell = ws_r.cell(1, col_idx, h)
         cell.font = FONT_BOLD_WHITE
         cell.fill = FILL_HEADER
 
-    # Compute lastRow from max of columns A, B, C
     last_row = max(
         _last_data_row(ws1, 1),
         _last_data_row(ws1, 2),
@@ -658,7 +971,6 @@ def evaluate_avl_status(wb, target_car: str, tested_car: str) -> str:
     for i in range(5, last_row + 1):
         op_code = _cell_val(ws1, i, 2)  # Column B
 
-        # Skip empty / non-numeric (section headers)
         if op_code is None or not _is_numeric(op_code):
             continue
 
@@ -700,11 +1012,9 @@ def evaluate_avl_status(wb, target_car: str, tested_car: str) -> str:
 
         out_row += 1
 
-    # Auto-fit columns (approximate)
     for col_idx in range(1, 13):
         ws_r.column_dimensions[get_column_letter(col_idx)].width = 20
 
-    # Build summary
     _build_overall_status(ws_r)
 
     return (
@@ -715,16 +1025,8 @@ def evaluate_avl_status(wb, target_car: str, tested_car: str) -> str:
     )
 
 
-def _last_data_row(ws, col: int) -> int:
-    """Find the last non-empty row in a column."""
-    for r in range(ws.max_row, 0, -1):
-        if _cell_val(ws, r, col) is not None:
-            return r
-    return 1
-
-
 def _build_overall_status(ws_r):
-    """Build 'Overall Status by Op Code' summary table at bottom of results."""
+    """Build 'Overall Status by Op Code' summary at bottom of results."""
     last_row = _last_data_row(ws_r, 1)
 
     codes: Dict[str, dict] = OrderedDict()
@@ -742,13 +1044,12 @@ def _build_overall_status(ws_r):
 
     start_row = last_row + 2
 
-    # Summary header
     ws_r.cell(start_row, 1).value = "Overall Status by Op Code"
     ws_r.cell(start_row, 1).font = Font(bold=True)
     ws_r.cell(start_row, 1).fill = FILL_SUMMARY
     ws_r.merge_cells(
         start_row=start_row, start_column=1,
-        end_row=start_row, end_column=4
+        end_row=start_row, end_column=4,
     )
 
     ws_r.cell(start_row + 1, 1).value = "Op Code"
@@ -793,14 +1094,13 @@ def _build_overall_status(ws_r):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def update_sub_operation_heatmap(wb) -> str:
-    """Read Evaluation Results (A:C), write colored dots to HeatMap Sheet col R."""
+    """Read Evaluation Results, write coloured dots to HeatMap Sheet col R."""
     if EVAL_RESULTS not in wb.sheetnames:
         return "Evaluation Results sheet not found. Run Evaluation first."
 
     ws_eval = wb[EVAL_RESULTS]
     ws_heat = wb[SHEET_T]
 
-    # Build dict: op_code → status from Evaluation Results
     d: Dict[str, str] = {}
     last_eval = _last_data_row(ws_eval, 1)
     for i in range(2, last_eval + 1):
@@ -811,7 +1111,6 @@ def update_sub_operation_heatmap(wb) -> str:
                 status = _trim(_cell_val(ws_eval, i, 12)).upper()
             d[code] = status
 
-    # Write to HeatMap Sheet column R (18) — non-bold rows only
     last_heat = _last_data_row(ws_heat, 1)
     updated = 0
     for i in range(2, last_heat + 1):
@@ -823,7 +1122,6 @@ def update_sub_operation_heatmap(wb) -> str:
         if not op_code:
             continue
 
-        # Clear existing
         target_cell = ws_heat.cell(i, 18)  # Column R
         target_cell.value = None
 
@@ -831,7 +1129,6 @@ def update_sub_operation_heatmap(wb) -> str:
             status = d[op_code]
             if status in ("RED", "YELLOW", "GREEN"):
                 target_cell.value = BULLET
-                target_cell.font = Font(size=14)
                 target_cell.alignment = Alignment(horizontal="center")
 
                 if status == "RED":
@@ -850,11 +1147,7 @@ def update_sub_operation_heatmap(wb) -> str:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def update_operation_mode_status(wb, status_col: int = 18) -> str:
-    """Aggregate sub-operation statuses into group header rows.
-
-    Groups are defined by bold rows in column B of HeatMap Sheet.
-    The status column defaults to 18 (R) — same as sub-operation dots.
-    """
+    """Aggregate sub-operation statuses into group header rows."""
     ws = wb[SHEET_T]
     last_row = _last_data_row(ws, 2)
 
@@ -871,7 +1164,6 @@ def update_operation_mode_status(wb, status_col: int = 18) -> str:
                 groups_updated += 1
             if i <= last_row:
                 grp_start = i + 1
-        # else: accumulate into current group
 
     return f"Operation mode statuses updated: {groups_updated} groups evaluated."
 
@@ -893,9 +1185,9 @@ def _evaluate_group_status(ws, start_row: int, end_row: int, status_col: int):
             red, green, blue = _hex_to_rgb(fc)
             if _is_near(red, green, blue, 255, 0, 0, 45):
                 red_cnt += 1
-            elif _is_near(red, green, blue, 227, 225, 0, 45) or _is_near(red, green, blue, 255, 255, 0, 45):
+            elif (_is_near(red, green, blue, 227, 225, 0, 45) or
+                  _is_near(red, green, blue, 255, 255, 0, 45)):
                 yellow_cnt += 1
-            # green: no counting needed
 
     if total_cnt == 0:
         return
@@ -906,13 +1198,16 @@ def _evaluate_group_status(ws, start_row: int, end_row: int, status_col: int):
 
     if red_cnt > 0:
         header_cell.value = "NOK"
-        header_cell.fill = PatternFill(start_color="FF0000", end_color="FF0000", fill_type="solid")
+        header_cell.fill = PatternFill(
+            start_color="FF0000", end_color="FF0000", fill_type="solid")
     elif total_cnt > 0 and yellow_cnt / total_cnt > 0.35:
         header_cell.value = "Acceptable"
-        header_cell.fill = PatternFill(start_color="E3E100", end_color="E3E100", fill_type="solid")
+        header_cell.fill = PatternFill(
+            start_color="E3E100", end_color="E3E100", fill_type="solid")
     else:
         header_cell.value = "OK"
-        header_cell.fill = PatternFill(start_color="00B050", end_color="00B050", fill_type="solid")
+        header_cell.fill = PatternFill(
+            start_color="00B050", end_color="00B050", fill_type="solid")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -924,7 +1219,6 @@ def clear_sheet1(wb) -> str:
     if SHEET1 not in wb.sheetnames:
         return f"Sheet '{SHEET1}' not found."
     ws = wb[SHEET1]
-    # Unmerge all merged cells first
     for merge_range in list(ws.merged_cells.ranges):
         ws.unmerge_cells(str(merge_range))
     for row in ws.iter_rows(min_row=1, max_row=ws.max_row,
@@ -935,16 +1229,11 @@ def clear_sheet1(wb) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  EXPORT  (mirrors Export.bas — generates a formatted XLSX extract)
+#  EXPORT
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def export_sheet_data(wb, sheet_name: str) -> bytes:
-    """Export a sheet's visible data to a new XLSX file (in memory).
-
-    Since Python cannot copy-as-picture like VBA, we export to a clean
-    XLSX that preserves all values, formatting, and column widths but
-    omits hidden rows/columns. The caller can save or download this.
-    """
+    """Export a sheet's visible data to a new XLSX file (in memory)."""
     if sheet_name not in wb.sheetnames:
         raise ValueError(f"Sheet '{sheet_name}' not found.")
 
@@ -981,10 +1270,10 @@ def export_sheet_data(wb, sheet_name: str) -> bytes:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  DATA PREVIEW HELPERS
+#  DATA PREVIEW
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def sheet_to_dataframe(ws, max_rows: int = 500) -> "pd.DataFrame":
+def sheet_to_dataframe(ws, max_rows: int = 500):
     """Convert a worksheet to a pandas DataFrame for display."""
     import pandas as pd
 
@@ -999,7 +1288,6 @@ def sheet_to_dataframe(ws, max_rows: int = 500) -> "pd.DataFrame":
     if not data:
         return pd.DataFrame()
 
-    # Use first row as header
     headers = [str(v) if v else f"Col{i+1}" for i, v in enumerate(data[0])]
     df = pd.DataFrame(data[1:], columns=headers)
     return df
@@ -1012,98 +1300,278 @@ def sheet_to_dataframe(ws, max_rows: int = 500) -> "pd.DataFrame":
 def main():
     st.set_page_config(
         page_title="AVL-DRIVE Heatmap Tool",
-        page_icon="🔧",
+        page_icon="\U0001f527",
         layout="wide",
     )
 
-    st.title("🔧 AVL-DRIVE Heatmap Tool — Python Edition")
-    st.caption("Standalone Python replica of the Excel VBA tool (version 5.1)")
+    st.title("\U0001f527 AVL-DRIVE Heatmap Tool \u2014 Python Edition")
+    st.caption("Fully independent Python replica of the Excel VBA tool (v5.1)")
 
-    # ── Sidebar: File Upload ─────────────────────────────────────────────
-    st.sidebar.header("📂 Workbook")
+    # ── Sidebar: Mode Selection & File Upload ────────────────────────────
+    st.sidebar.header("\U0001f4c2 Data Input")
 
+    mode = st.sidebar.radio(
+        "Input Mode",
+        [
+            "\U0001f4c1 Upload individual data files (standalone)",
+            "\U0001f4e6 Upload .xlsm workbook (legacy)",
+        ],
+        index=0,
+        help=(
+            "Standalone mode: upload your Data Transfer Sheet and Sheet1 files.\n"
+            "Legacy mode: upload the original .xlsm file."
+        ),
+    )
+
+    if "standalone" in mode.lower():
+        _render_standalone_mode()
+    else:
+        _render_legacy_mode()
+
+
+def _render_standalone_mode():
+    """Standalone mode: upload Data Transfer Sheet + Sheet1 separately."""
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("\u2460 Data Transfer Sheet")
+    st.sidebar.caption(
+        "Upload the AVL-DRIVE scores file.\n"
+        "Format: Col A = Op Code, Col B = Operation Name, "
+        "then vehicle scores in alternating columns (D, F, H, J\u2026).\n"
+        "Row 1 = car names, Row 2 = 'DR' markers."
+    )
+    dt_file = st.sidebar.file_uploader(
+        "Data Transfer Sheet",
+        type=["xlsx", "xls", "csv"],
+        key="dt_upload",
+    )
+
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("\u2461 Sheet1 (Benchmark Data)")
+    st.sidebar.caption(
+        "Upload the benchmark + P1 status file (.xlsx to preserve colours).\n"
+        "Format: Op codes in col B, operation names in col C, "
+        "coloured P1 dots in cols F & L, benchmark values in car columns."
+    )
+    s1_file = st.sidebar.file_uploader(
+        "Sheet1 (benchmark data)",
+        type=["xlsx", "xls"],
+        key="s1_upload",
+    )
+
+    if dt_file is None or s1_file is None:
+        st.info(
+            "\U0001f446 Upload both data files in the sidebar to get started."
+        )
+        _render_format_guide()
+        return
+
+    # Build workbook when new files are uploaded
+    dt_key = f"dt_{dt_file.name}_{dt_file.size}"
+    s1_key = f"s1_{s1_file.name}_{s1_file.size}"
+
+    need_rebuild = (
+        st.session_state.get("dt_key") != dt_key
+        or st.session_state.get("s1_key") != s1_key
+        or "wb_bytes" not in st.session_state
+    )
+
+    if need_rebuild:
+        st.session_state["dt_key"] = dt_key
+        st.session_state["s1_key"] = s1_key
+        st.session_state["messages"] = []
+
+        dt_bytes = dt_file.read()
+        s1_bytes = s1_file.read()
+
+        if dt_file.name.endswith(".csv"):
+            import pandas as pd
+            df = pd.read_csv(io.BytesIO(dt_bytes))
+            dt_wb = openpyxl.Workbook()
+            ws = dt_wb.active
+            for c_idx, col_name in enumerate(df.columns, 1):
+                ws.cell(1, c_idx).value = col_name
+            for r_idx, row_vals in df.iterrows():
+                for c_idx, val in enumerate(row_vals, 1):
+                    ws.cell(int(r_idx) + 2, c_idx).value = val
+        else:
+            dt_wb = openpyxl.load_workbook(
+                io.BytesIO(dt_bytes), data_only=False)
+
+        s1_wb = openpyxl.load_workbook(
+            io.BytesIO(s1_bytes), data_only=False)
+
+        wb = build_workbook_from_uploads(dt_wb, s1_wb)
+
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        st.session_state["wb_bytes"] = buf.read()
+        st.session_state["wb_name"] = "avl_heatmap_output.xlsx"
+
+        dt_wb.close()
+        s1_wb.close()
+
+    st.sidebar.success(
+        f"\u2705 Data loaded:\n"
+        f"\u2022 DT: `{dt_file.name}`\n"
+        f"\u2022 S1: `{s1_file.name}`"
+    )
+
+    _render_tool_ui()
+
+
+def _render_legacy_mode():
+    """Legacy mode: upload the original .xlsm file."""
+    st.sidebar.markdown("---")
     uploaded = st.sidebar.file_uploader(
         "Upload .xlsm workbook",
         type=["xlsm", "xlsx"],
+        key="xlsm_upload",
         help="Upload the AVLDrive_Heatmap_Tool .xlsm file",
     )
 
     if uploaded is not None:
-        if "wb_bytes" not in st.session_state or st.session_state.get("wb_name") != uploaded.name:
+        if ("wb_bytes" not in st.session_state
+                or st.session_state.get("wb_name") != uploaded.name):
             st.session_state["wb_bytes"] = uploaded.read()
             st.session_state["wb_name"] = uploaded.name
             st.session_state["messages"] = []
 
     if "wb_bytes" not in st.session_state:
-        st.info("👆 Upload an `.xlsm` workbook to get started.")
-        st.markdown("""
-        ### Features
-        This tool replicates all six functions of the Excel VBA macro tool:
-
-        | Button | Function |
-        |--------|----------|
-        | **HeatMap** | Transfer data from Data Transfer Sheet → HeatMap Sheet |
-        | **Reset** | Restore HeatMap Sheet from HeatMap Template |
-        | **Evaluation** | Evaluate AVL statuses with car selection |
-        | **Suboperation Status** | Write colored status dots to HeatMap |
-        | **Operation Mode Status** | Aggregate group statuses |
-        | **Export** | Download a sheet's visible data as XLSX |
-        """)
+        st.info("\U0001f446 Upload an `.xlsm` workbook to get started.")
+        _render_format_guide()
         return
 
-    st.sidebar.success(f"✅ Loaded: `{st.session_state['wb_name']}`")
+    st.sidebar.success(f"\u2705 Loaded: `{st.session_state['wb_name']}`")
+    _render_tool_ui()
 
-    # Load workbook
+
+def _render_format_guide():
+    """Show format guides for both input modes."""
+    st.markdown("""
+    ### How It Works
+
+    This tool is a **complete standalone Python replica** of the Excel VBA-based
+    AVL-DRIVE Heatmap Tool. It does **not** require the original `.xlsm` file.
+
+    ---
+
+    ### \U0001f4c1 Standalone Mode \u2014 Upload Your Data Files
+
+    Upload two files that you normally paste into the Excel tool:
+
+    #### \u2460 Data Transfer Sheet (CSV or Excel)
+    The AVL-DRIVE scores per vehicle. Format:
+
+    | Col A | Col B | Col C | Col D | Col E | Col F | ... |
+    |-------|-------|-------|-------|-------|-------|-----|
+    | | Operation Modes | | *Car Name 1* | | *Car Name 2* | ... |
+    | | Operation Modes | | DR | | DR | ... |
+    | 10000000 | AVL-DRIVE Rating | | 7.6 | | 7.4 | ... |
+    | 10100000 | Drive away | | 7.7 | | 7.8 | ... |
+    | ... | ... | | ... | | ... | ... |
+
+    - **Col A**: Op code (numeric)
+    - **Col B**: Operation name
+    - **Cols D, F, H, J**: Vehicle AVL scores (even columns, separated by empty cols)
+    - **Row 1**: Car names in data columns
+    - **Row 2**: "DR" markers in data columns
+
+    #### \u2461 Sheet1 \u2014 Benchmark Data (Excel only, .xlsx)
+    Must be Excel format to **preserve P1 status colours** (green/yellow/red dots).
+
+    | Col A | Col B | Col C | Col F | Col I | Col J | Col L | Col O | Col P |
+    |-------|-------|-------|-------|-------|-------|-------|-------|-------|
+    | | | | Drivability | | | Responsiveness | | |
+    | | | | Current Status | *Car 1* | *Car 2* | Current Status | *Car 1* | *Car 2* |
+    | USE CASE | | | P1 | | | P1 | | |
+    | Drive away | | | | 98.8 | | | 70.9 | |
+    | | 10101300 | Creep Eng On | \u25cf | 100 | 73.7 | \u25cf | 100 | 100 |
+
+    - **Col B**: Op code (numeric)
+    - **Col C**: Sub-operation name
+    - **Col F**: Drivability P1 status (coloured \u25cf dot)
+    - **Col L**: Responsiveness P1 status (coloured \u25cf dot)
+    - **Car name columns**: Benchmark percentage values
+    - Car names appear in **Row 2**
+
+    ---
+
+    ### \U0001f4e6 Legacy Mode \u2014 Upload .xlsm
+
+    Upload the original `AVLDrive_Heatmap_Tool version_5.1.xlsm` file directly.
+
+    ---
+
+    ### \u26a1 Available Operations
+
+    | Button | Function |
+    |--------|----------|
+    | **HeatMap** | Transfer data from Data Transfer Sheet \u2192 HeatMap Sheet |
+    | **Reset** | Restore HeatMap Sheet from built-in template |
+    | **Evaluation** | Evaluate AVL statuses with car selection |
+    | **Suboperation Status** | Write coloured status dots to HeatMap |
+    | **Operation Mode Status** | Aggregate group statuses |
+    | **Export** | Download a sheet's visible data as XLSX |
+    """)
+
+
+def _render_tool_ui():
+    """Render the main tool UI (shared between standalone and legacy modes)."""
     wb = openpyxl.load_workbook(
         io.BytesIO(st.session_state["wb_bytes"]),
-        keep_vba=True,
         data_only=False,
     )
     st.sidebar.write(f"Sheets: {', '.join(wb.sheetnames)}")
 
-    # ── Messages Area ────────────────────────────────────────────────────
     if "messages" not in st.session_state:
         st.session_state["messages"] = []
 
-    # ── Action Buttons (six columns) ─────────────────────────────────────
-    st.subheader("⚡ Actions")
+    # ── Action Buttons ───────────────────────────────────────────────────
+    st.subheader("\u26a1 Actions")
 
     col1, col2, col3, col4, col5, col6 = st.columns(6)
 
     with col1:
-        if st.button("🗺️ HeatMap", use_container_width=True, help="Refresh heatmap from Data Transfer Sheet"):
+        if st.button("\U0001f5fa\ufe0f HeatMap", use_container_width=True,
+                     help="Refresh heatmap from Data Transfer Sheet"):
             msg = refresh_heatmap(wb)
             _save_wb(wb)
             st.session_state["messages"].append(("info", msg))
             st.rerun()
 
     with col2:
-        if st.button("🔄 Reset", use_container_width=True, help="Reset HeatMap from template"):
+        if st.button("\U0001f504 Reset", use_container_width=True,
+                     help="Reset HeatMap from template"):
             msg = reset_heatmap(wb)
             _save_wb(wb)
             st.session_state["messages"].append(("info", msg))
             st.rerun()
 
     with col3:
-        if st.button("📊 Evaluation", use_container_width=True, help="Evaluate AVL statuses"):
+        if st.button("\U0001f4ca Evaluation", use_container_width=True,
+                     help="Evaluate AVL statuses"):
             st.session_state["show_eval_dialog"] = True
 
     with col4:
-        if st.button("🔵 Subop Status", use_container_width=True, help="Update sub-operation status dots"):
+        if st.button("\U0001f535 Subop Status", use_container_width=True,
+                     help="Update sub-operation status dots"):
             msg = update_sub_operation_heatmap(wb)
             _save_wb(wb)
             st.session_state["messages"].append(("info", msg))
             st.rerun()
 
     with col5:
-        if st.button("📈 Op Mode Status", use_container_width=True, help="Update operation mode statuses"):
+        if st.button("\U0001f4c8 Op Mode Status", use_container_width=True,
+                     help="Update operation mode statuses"):
             msg = update_operation_mode_status(wb)
             _save_wb(wb)
             st.session_state["messages"].append(("info", msg))
             st.rerun()
 
     with col6:
-        if st.button("🗑️ Clear Sheet1", use_container_width=True, help="Clear all data in Sheet1"):
+        if st.button("\U0001f5d1\ufe0f Clear Sheet1", use_container_width=True,
+                     help="Clear all data in Sheet1"):
             msg = clear_sheet1(wb)
             _save_wb(wb)
             st.session_state["messages"].append(("info", msg))
@@ -1112,36 +1580,51 @@ def main():
     # ── Evaluation Dialog ────────────────────────────────────────────────
     if st.session_state.get("show_eval_dialog"):
         st.divider()
-        st.subheader("🚗 Car Selection for Evaluation")
+        st.subheader("\U0001f697 Car Selection for Evaluation")
 
-        ws1 = wb[SHEET1]
-        car_names = get_available_car_names(ws1)
-
-        if not car_names:
-            st.error("No car names found in Sheet1 row 2 (starting from column H).")
+        if SHEET1 not in wb.sheetnames:
+            st.error(f"Sheet '{SHEET1}' not found in the workbook.")
         else:
-            ecol1, ecol2 = st.columns(2)
-            with ecol1:
-                target_car = st.selectbox("🎯 Target Car", car_names, key="eval_target")
-            with ecol2:
-                tested_idx = min(1, len(car_names) - 1) if len(car_names) > 1 else 0
-                tested_car = st.selectbox("🔬 Tested Car", car_names, index=tested_idx, key="eval_tested")
+            ws1 = wb[SHEET1]
+            car_names = get_available_car_names(ws1)
 
-            if target_car == tested_car:
-                st.warning("⚠️ Same car selected for both Target and Tested.")
+            if not car_names:
+                st.error(
+                    "No car names found in Sheet1 row 2 "
+                    "(starting from column H)."
+                )
+            else:
+                ecol1, ecol2 = st.columns(2)
+                with ecol1:
+                    target_car = st.selectbox(
+                        "\U0001f3af Target Car", car_names, key="eval_target")
+                with ecol2:
+                    tested_idx = (
+                        min(1, len(car_names) - 1) if len(car_names) > 1
+                        else 0
+                    )
+                    tested_car = st.selectbox(
+                        "\U0001f52c Tested Car", car_names,
+                        index=tested_idx, key="eval_tested")
 
-            bcol1, bcol2 = st.columns(2)
-            with bcol1:
-                if st.button("✅ Run Evaluation", type="primary"):
-                    msg = evaluate_avl_status(wb, target_car, tested_car)
-                    _save_wb(wb)
-                    st.session_state["messages"].append(("success", msg))
-                    st.session_state["show_eval_dialog"] = False
-                    st.rerun()
-            with bcol2:
-                if st.button("❌ Cancel"):
-                    st.session_state["show_eval_dialog"] = False
-                    st.rerun()
+                if target_car == tested_car:
+                    st.warning(
+                        "\u26a0\ufe0f Same car selected for both "
+                        "Target and Tested."
+                    )
+
+                bcol1, bcol2 = st.columns(2)
+                with bcol1:
+                    if st.button("\u2705 Run Evaluation", type="primary"):
+                        msg = evaluate_avl_status(wb, target_car, tested_car)
+                        _save_wb(wb)
+                        st.session_state["messages"].append(("success", msg))
+                        st.session_state["show_eval_dialog"] = False
+                        st.rerun()
+                with bcol2:
+                    if st.button("\u274c Cancel"):
+                        st.session_state["show_eval_dialog"] = False
+                        st.rerun()
 
     # ── Show messages ────────────────────────────────────────────────────
     for msg_type, msg_text in st.session_state.get("messages", []):
@@ -1152,13 +1635,12 @@ def main():
         else:
             st.info(msg_text)
 
-    # Clear messages after display
     if st.session_state.get("messages"):
         st.session_state["messages"] = []
 
-    # ── Download modified workbook ───────────────────────────────────────
+    # ── Download ─────────────────────────────────────────────────────────
     st.divider()
-    st.subheader("💾 Download")
+    st.subheader("\U0001f4be Download")
     dcol1, dcol2 = st.columns(2)
 
     with dcol1:
@@ -1166,33 +1648,42 @@ def main():
         wb.save(buf)
         buf.seek(0)
         st.download_button(
-            "📥 Download Modified Workbook",
+            "\U0001f4e5 Download Modified Workbook",
             data=buf.getvalue(),
-            file_name=st.session_state.get("wb_name", "output.xlsm"),
-            mime="application/vnd.ms-excel.sheet.macroEnabled.12",
+            file_name=st.session_state.get("wb_name", "output.xlsx"),
+            mime=(
+                "application/vnd.openxmlformats-officedocument"
+                ".spreadsheetml.sheet"
+            ),
             use_container_width=True,
         )
 
     with dcol2:
-        export_sheet = st.selectbox("Export sheet", wb.sheetnames, key="export_sheet")
-        if st.button("📤 Export Sheet as XLSX", use_container_width=True):
+        export_sheet = st.selectbox(
+            "Export sheet", wb.sheetnames, key="export_sheet")
+        if st.button("\U0001f4e4 Export Sheet as XLSX",
+                     use_container_width=True):
             try:
                 data = export_sheet_data(wb, export_sheet)
                 st.download_button(
-                    f"⬇️ Download {export_sheet}.xlsx",
+                    f"\u2b07\ufe0f Download {export_sheet}.xlsx",
                     data=data,
                     file_name=f"{export_sheet}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    mime=(
+                        "application/vnd.openxmlformats-officedocument"
+                        ".spreadsheetml.sheet"
+                    ),
                 )
             except Exception as e:
                 st.error(f"Export error: {e}")
 
     # ── Sheet Preview ────────────────────────────────────────────────────
     st.divider()
-    st.subheader("📋 Sheet Preview")
+    st.subheader("\U0001f4cb Sheet Preview")
 
     import pandas as pd
-    preview_sheet = st.selectbox("Select sheet to preview", wb.sheetnames, key="preview_sheet")
+    preview_sheet = st.selectbox(
+        "Select sheet to preview", wb.sheetnames, key="preview_sheet")
     ws_preview = wb[preview_sheet]
 
     df = sheet_to_dataframe(ws_preview, max_rows=200)
