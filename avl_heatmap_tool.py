@@ -12,7 +12,7 @@ Provides a Streamlit GUI with the same six buttons as the Excel ribbon:
   3. Evaluation — Evaluate AVL statuses with car selection
   4. Suboperation Status — Write colored dots to HeatMap Sheet
   5. Operation Mode Status — Aggregate group statuses
-  6. Export    — Export visible selection as image (PNG)
+  6. Export    — Export visible selection as XLSX
 
 Usage:
     streamlit run avl_heatmap_tool.py
@@ -212,14 +212,14 @@ def get_p1_status_from_color(cell) -> str:
 
     # Check fill colour first (mirrors VBA MapColorToStatus)
     fill_hex = _resolve_fill_color_hex(cell)
-    fr, fg_, fb = _hex_to_rgb(fill_hex)
+    fr, fg, fb = _hex_to_rgb(fill_hex)
 
     # Fill colour checks
-    if _is_near(fr, fg_, fb, 0, 176, 80) or _is_near(fr, fg_, fb, 0, 158, 71):
+    if _is_near(fr, fg, fb, 0, 176, 80) or _is_near(fr, fg, fb, 0, 158, 71):
         return "GREEN"
-    if _is_near(fr, fg_, fb, 255, 192, 0) or _is_near(fr, fg_, fb, 255, 217, 102, 60):
+    if _is_near(fr, fg, fb, 255, 192, 0) or _is_near(fr, fg, fb, 255, 217, 102, 60):
         return "YELLOW"
-    if _is_near(fr, fg_, fb, 255, 0, 0) or _is_near(fr, fg_, fb, 192, 0, 0):
+    if _is_near(fr, fg, fb, 255, 0, 0) or _is_near(fr, fg, fb, 192, 0, 0):
         return "RED"
 
     # Font colour checks (broader tolerance for the most common)
@@ -890,10 +890,10 @@ def _evaluate_group_status(ws, start_row: int, end_row: int, status_col: int):
         if cell.value and str(cell.value).strip():
             total_cnt += 1
             fc = _resolve_font_color_hex(cell)
-            r_, g_, b_ = _hex_to_rgb(fc)
-            if _is_near(r_, g_, b_, 255, 0, 0, 45):
+            red, green, blue = _hex_to_rgb(fc)
+            if _is_near(red, green, blue, 255, 0, 0, 45):
                 red_cnt += 1
-            elif _is_near(r_, g_, b_, 227, 225, 0, 45) or _is_near(r_, g_, b_, 255, 255, 0, 45):
+            elif _is_near(red, green, blue, 227, 225, 0, 45) or _is_near(red, green, blue, 255, 255, 0, 45):
                 yellow_cnt += 1
             # green: no counting needed
 
