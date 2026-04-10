@@ -859,7 +859,7 @@ def get_available_car_names(ws) -> List[str]:
     """Scan row 2 of Sheet1 from col H onwards for unique car names."""
     names: List[str] = []
     last_col = ws.max_column
-    skip_words = {"status", "p1", "p2", "p3", "lowest events", "current status"}
+    skip_words = {"status", "p1", "p2", "p3", "lowest events"}
     for col in range(CAR_DATA_START_COL, last_col + 1):
         name = _trim(_cell_val(ws, 2, col))
         if not name:
