@@ -121,37 +121,33 @@ Public Sub RefreshHeatmap()
         End If
     Next i
 
+    '--- Detach buttons BEFORE hiding so they stay visible ---
+    Dim shp As Shape
+    On Error Resume Next
+    For Each shp In wsT.Shapes
+        If shp.Type = msoFormControl Then shp.Placement = xlFreeFloating
+    Next shp
+    On Error GoTo ErrorHandler
+
     '================= CORE RULE =================
-    ' Remove / Hide entire operation if LAST vehicle has no data
     If DELETE_EMPTY Then
         DeleteRowsMissingLastVehicle wsT, tA, tVehCols(n)
     Else
         HideRowsMissingLastVehicle wsT, tA, tVehCols(n)
     End If
 
-    '--- Hide ID column ---
     If HIDE_IDS_COLA Then
         wsT.Range(wsT.Cells(tA.Row + 2, tA.Column - 1), _
                   wsT.Cells(wsT.Rows.count, tA.Column - 1)).NumberFormat = ";;;"
     End If
 
-    '--- Restore separator formatting ---
     RestoreSeparatorColumnsFromTemplate wsT, wsTemplate, tA
-
-    '--- Hide unused vehicle blocks ---
     ManageVehicleColumnVisibility wsT, n
 
-    '--- FIX: Ensure form-control buttons remain visible after row/column hiding ---
-    '   Buttons are anchored to data rows; when those rows are hidden the
-    '   buttons collapse.  Setting Placement = xlFreeFloating detaches them
-    '   from the cell grid so they stay put.
-    Dim shp As Shape
+    '--- Re-show buttons after hiding ---
     On Error Resume Next
     For Each shp In wsT.Shapes
-        If shp.Type = msoFormControl Then
-            shp.Placement = xlFreeFloating
-            shp.Visible = msoTrue
-        End If
+        If shp.Type = msoFormControl Then shp.Visible = msoTrue
     Next shp
     On Error GoTo ErrorHandler
 
